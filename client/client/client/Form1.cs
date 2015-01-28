@@ -11,12 +11,14 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Threading;
+using System.Diagnostics;
 
 namespace client
 {
     public partial class Form1 : Form
     {
         public Socket WinSocket;
+        static TimeSpan tp;
 
         public Form1()
         {
@@ -84,13 +86,17 @@ namespace client
                 mediaPlayer.URL = "moib1.mp3";
             }
 
-            Thread t = new Thread(SyncMusic);
-            t.Start();
+            //Thread t = new Thread(SyncMusic);
+            //t.Start();
+
+            SyncMusic();
         }
 
         private void SyncMusic()
         {
-            for (; ; )
+            tp = new TimeSpan();
+
+            for (int i = 0; i < 10; i++)
             {
                 byte[] data = new byte[100];
 

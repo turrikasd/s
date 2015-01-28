@@ -54,7 +54,7 @@ namespace srv
             Stopwatch s = new Stopwatch();
             s.Start();
 
-            for (;;)
+            for (int i = 0; i < 10; i++)
             {
                 double dtime = (double)(s.ElapsedMilliseconds / 1000.0d);
                 string time = dtime.ToString();
@@ -62,7 +62,7 @@ namespace srv
                 server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint);
                 server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint2);
 
-                System.Threading.Thread.Sleep(500);
+                System.Threading.Thread.Sleep(1000);
             }
         }
 
