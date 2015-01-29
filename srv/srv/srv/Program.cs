@@ -12,76 +12,140 @@ namespace srv
 {
     class Program
     {
-        static void Main(string[] args)
+        // Incoming data from the client.
+        public static string data = null;
+        static int update = 0;
+        static string curFileName = "song.mp3";
+
+        public static void StartListening()
         {
-            Send();
+            // Data buffer for incoming data.
+            byte[] bytes = new Byte[1024];
+
+            // Establish the local endpoint for the socket.
+            // Dns.GetHostName returns the name of the 
+            // host running the application.
+            IPHostEntry ipHostInfo = Dns.Resolve("0.0.0.0");
+            IPAddress ipAddress = ipHostInfo.AddressList[0];
+            IPEndPoint localEndPoint = new IPEndPoint(ipAddress, 11000);
+
+            // Create a TCP/IP socket.
+            Socket listener = new Socket(AddressFamily.InterNetwork,
+                SocketType.Stream, ProtocolType.Tcp);
+
+            // Bind the socket to the local endpoint and 
+            // listen for incoming connections.
+            try
+            {
+                listener.Bind(localEndPoint);
+                listener.Listen(10);
+
+                Stopwatch startTimer = new Stopwatch();
+                startTimer.Start();
+
+                // Start listening for connections.
+                while (true)
+                {
+                    Console.WriteLine("Waiting for a connection...");
+                    // Program is suspended while waiting for an incoming connection.
+                    Socket handler = listener.Accept();
+                    data = null;
+
+                    // An incoming connection needs to be processed.
+                    while (true)
+                    {
+                        bytes = new byte[1024];
+                        int bytesRec = handler.Receive(bytes);
+                        data += Encoding.ASCII.GetString(bytes, 0, bytesRec);
+                        break;
+                    }
+
+                    // Show the data on the console.
+                    Console.WriteLine("Text received : {0}", data);
+
+                    if (data == "Hey")
+                    {
+                        byte[] msg = Encoding.ASCII.GetBytes(data);
+
+                        handler.SendFile(curFileName);
+
+                        handler.Receive(msg);
+
+                        Stopwatch sw = new Stopwatch();
+                        sw.Start();
+
+                        msg = Encoding.ASCII.GetBytes(update.ToString());
+                        handler.Send(msg);
+
+                        bytes = new byte[1024];
+                        int bytesRe = handler.Receive(bytes);
+
+                        sw.Stop();
+
+                        Console.WriteLine("Ping: " + sw.ElapsedMilliseconds);
+
+                        string sendTimer = "" + (sw.ElapsedMilliseconds / 2 + 10000 - startTimer.ElapsedMilliseconds);
+                        msg = Encoding.ASCII.GetBytes(sendTimer);
+
+                        handler.Send(msg); // send play order
+
+                        Console.WriteLine(sendTimer);
+                    }
+
+                    else if (data == "file")
+                    {
+                        startTimer.Reset();
+                        startTimer.Start();
+
+                        Console.WriteLine("Starting to receive a file...");
+                        handler.ReceiveTimeout = 50;
+
+                        using (var output = File.Create("song.mp3"))
+                        {
+                            // read the file in chunks of 1KB
+                            var buffer = new byte[1024];
+                            int bytesRead;
+                            try
+                            {
+                                while ((bytesRead = handler.Receive(buffer, 1024, SocketFlags.None)) > 0)
+                                {
+                                    output.Write(buffer, 0, bytesRead);
+                                }
+                            }
+                            catch
+                            { }
+                        }
+
+                        update++;
+                        Console.WriteLine("Done receiving file!");
+                    }
+
+                    else if (data == "update")
+                    {
+                        bytes = new byte[1024];
+                        bytes = Encoding.ASCII.GetBytes("" + update);
+                        handler.Send(bytes);
+                    }
+
+                    handler.Shutdown(SocketShutdown.Both);
+                    handler.Close();
+                }
+
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+
+            Console.WriteLine("\nPress ENTER to continue...");
+            Console.Read();
+
         }
 
-        static void Send()
+        public static int Main(String[] args)
         {
-            IPEndPoint RemoteEndPoint = new IPEndPoint(
-                                       IPAddress.Parse("192.168.43.231"), 9050);
-
-            IPEndPoint RemoteEndPoint2 = new IPEndPoint(
-                                       IPAddress.Parse("192.168.43.16"), 9050);
-
-            Socket server = new Socket(AddressFamily.InterNetwork,
-                                       SocketType.Dgram, ProtocolType.Udp);
-
-            byte[] music;
-            music = File.ReadAllBytes("moib1.mp3");
-
-            for (int i = 0; i < 32; i++)
-            {
-                byte[] data = new byte[65507];
-
-                Array.Copy(music, i * 65507, data, 0, 65507);
-
-                server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint);
-                server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint2);
-
-                Console.WriteLine((int)(i / 32.0f * 100.0f) + "% done");
-                System.Threading.Thread.Sleep(100);
-            }
-
-            {
-                Console.ReadKey();
-                byte[] data = Encoding.ASCII.GetBytes("play");
-                server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint);
-                server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint2);
-            }
-
-            Stopwatch s = new Stopwatch();
-            s.Start();
-
-            for (int i = 0; i < 10; i++)
-            {
-                double dtime = (double)(s.ElapsedMilliseconds / 1000.0d);
-                string time = dtime.ToString();
-                byte[] data = Encoding.ASCII.GetBytes(time);
-                server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint);
-                server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint2);
-
-                System.Threading.Thread.Sleep(1000);
-            }
-        }
-
-        static void Recieve()
-        {
-            IPEndPoint ServerEndPoint = new IPEndPoint(IPAddress.Any, 9050);
-            Socket WinSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            WinSocket.Bind(ServerEndPoint);
-
-            byte[] data = new byte[65507];
-
-            Console.Write("Waiting for client");
-            IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
-            EndPoint Remote = (EndPoint)(sender);
-            int recv = WinSocket.ReceiveFrom(data, ref Remote);
-            Console.WriteLine("Message received from {0}:", Remote.ToString());
-            Console.WriteLine(Encoding.ASCII.GetString(data, 0, recv));
-
-            Console.ReadKey();
+            StartListening();
+            return 0;
         }
     }
 }

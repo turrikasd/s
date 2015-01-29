@@ -17,8 +17,12 @@ namespace client
 {
     public partial class Form1 : Form
     {
-        public Socket WinSocket;
-        static TimeSpan tp;
+        static Socket senderSock;
+        static IPEndPoint remoteEP;
+        static int progress = 0;
+        static int update = -1;
+
+        string curFileName = "music.mp3";
 
         public Form1()
         {
@@ -27,92 +31,147 @@ namespace client
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            Receive();
-
-            //IPEndPoint RemoteEndPoint = new IPEndPoint(
-            //IPAddress.Parse("127.0.0.1"), 9050);
-            //Socket server = new Socket(AddressFamily.InterNetwork,
-            //                           SocketType.Dgram, ProtocolType.Udp);
-            //string welcome = "Hello, are you there?";
-            //byte[] data = Encoding.ASCII.GetBytes(welcome);
-            //server.SendTo(data, data.Length, SocketFlags.None, RemoteEndPoint); 
+            DownloadFileSyncAndPlay();
         }
 
-        private void Receive()
+        private void DownloadFileSyncAndPlay()
         {
-            IPEndPoint ServerEndPoint = new IPEndPoint(IPAddress.Any, 9050);
-            WinSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            WinSocket.Bind(ServerEndPoint);
+        // Data buffer for incoming data.
+        byte[] bytes = new byte[1024];
 
-            {
-                byte[] data = new byte[65507];
+        // Connect to a remote device.
+        try {
+            // Establish the remote endpoint for the socket.
+            //// This example uses port 11000 on the local computer.
+            IPHostEntry ipHostInfo = Dns.Resolve("169.254.160.127");
+            //IPHostEntry ipHostInfo = Dns.Resolve("192.168.43.16");
+            IPAddress ipAddress = ipHostInfo.AddressList[0];
+            remoteEP = new IPEndPoint(ipAddress,11000);
 
-                Console.Write("Waiting for client");
-                IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
-                EndPoint Remote = (EndPoint)(sender);
-                int recv = WinSocket.ReceiveFrom(data, ref Remote);
-                Console.WriteLine("Message received from {0}:", Remote.ToString());
-                //Console.WriteLine(Encoding.ASCII.GetString(data, 0, recv));
+            // Create a TCP/IP  socket.
+            senderSock = new Socket(AddressFamily.InterNetwork, 
+                SocketType.Stream, ProtocolType.Tcp );
 
-                ByteArrayToFile("moib1.mp3", data);
-            }
+            // Connect the socket to the remote endpoint. Catch any errors.
+            try {
+                senderSock.Connect(remoteEP);
 
-            for (int i = 0; i < 31; i++)
-            {
-                //IPEndPoint ServerEndPoint = new IPEndPoint(IPAddress.Any, 9050);
-                //Socket WinSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-                //WinSocket.Bind(ServerEndPoint);
+                Console.WriteLine("Socket connected to {0}",
+                    senderSock.RemoteEndPoint.ToString());
 
-                byte[] data = new byte[65507];
+                // Encode the data string into a byte array.
+                byte[] msg = Encoding.ASCII.GetBytes("Hey");
 
-                Console.Write("Waiting for client");
-                IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
-                EndPoint Remote = (EndPoint)(sender);
-                int recv = WinSocket.ReceiveFrom(data, ref Remote);
-                Console.WriteLine("Message received from {0}:", Remote.ToString());
+                // Send the data through the socket.
+                int bytesSent = senderSock.Send(msg);
 
-                AppendArrayToFile("moib1.mp3", data);
-            }
+                // Receive file!
+                Console.WriteLine("Starting to receive a file...");
+                senderSock.ReceiveTimeout = 150;
+                curFileName = "music" + update.ToString() + ".mp3";
 
-            {
-                byte[] data = new byte[100];
+                for (int i = 0; i < 10; i++)
+                {
+                    try
+                    {
+                        FileStream fs = File.OpenWrite(curFileName);
+                        fs.Close();
+                        break;
+                    }
 
-                Console.Write("Waiting for client");
-                IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
-                EndPoint Remote = (EndPoint)(sender);
-                int recv = WinSocket.ReceiveFrom(data, ref Remote);
-                Console.WriteLine("Message received from {0}:", Remote.ToString());
+                    catch
+                    {
+                        curFileName = "music" + i + update.ToString() + ".mp3";
+                    }
+                }
 
-                mediaPlayer.URL = "moib1.mp3";
-            }
+                using (var output = File.Create(curFileName))
+                {
+                    // read the file in chunks of 1KB
+                    var buffer = new byte[1024];
+                    int bytesRead;
+                    try
+                    {
+                        while ((bytesRead = senderSock.Receive(buffer, 1024, SocketFlags.None)) > 0)
+                        {
+                            output.Write(buffer, 0, bytesRead);
+                        }
+                    }
+                    catch
+                    { }
+                }
 
-            //Thread t = new Thread(SyncMusic);
-            //t.Start();
+                Console.WriteLine("Done receiving file!");
 
-            SyncMusic();
-        }
+                senderSock.Send(Encoding.ASCII.GetBytes("done"));
 
-        private void SyncMusic()
-        {
-            tp = new TimeSpan();
+                // Receive the response from the remote device.
+                int bytesRec = senderSock.Receive(bytes);
+                update = int.Parse(Encoding.ASCII.GetString(bytes,0,bytesRec));
 
-            for (int i = 0; i < 10; i++)
-            {
-                byte[] data = new byte[100];
+                // Send Pingtest back
+                msg = Encoding.ASCII.GetBytes("ping");
+                bytesSent = senderSock.Send(msg);
 
-                Console.Write("Waiting for client");
-                IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
-                EndPoint Remote = (EndPoint)(sender);
-                int recv = WinSocket.ReceiveFrom(data, ref Remote);
-                Console.WriteLine("Message received from {0}:", Remote.ToString());
+                // Receive the play order from the remote device.
+                bytesRec = senderSock.Receive(bytes);
+                long sleepTime = long.Parse(Encoding.ASCII.GetString(bytes, 0, bytesRec));
+                progress = 0;
 
-                string time = Encoding.ASCII.GetString(data, 0, recv);
+                label2.Text = (sleepTime / 1000).ToString();
 
-                double dTime = double.Parse(time);
+
+                if (sleepTime <= 0)
+                {
+                    progress = Math.Abs((int)sleepTime) + 4000;
+                    sleepTime = 4000;
+                }
+
+                else if (sleepTime < 4000)
+                {
+                    progress = 4000 - (int)sleepTime;
+                    sleepTime = 4000;
+                }
+
+                timer1.Interval = (int)sleepTime;
+                timer1.Start();
+
+                mediaPlayer.URL = curFileName;
+
+                senderSock.Shutdown(SocketShutdown.Both);
+                senderSock.Close();
+
+                if (!timer2.Enabled)
+                {
+                    timer2.Interval = 10000;
+                    timer2.Start();
+                }
                 
-                if (Math.Abs(mediaPlayer.Ctlcontrols.currentPosition - dTime) > 0.05d)
-                    mediaPlayer.Ctlcontrols.currentPosition = double.Parse(time);
+            } catch (ArgumentNullException ane) {
+                Console.WriteLine("ArgumentNullException : {0}",ane.ToString());
+            } catch (SocketException se) {
+                Console.WriteLine("SocketException : {0}",se.ToString());
+            } catch (Exception e) {
+                Console.WriteLine("Unexpected exception : {0}", e.ToString());
             }
+
+        } catch (Exception e) {
+            Console.WriteLine( e.ToString());
+        }
+        }
+
+        static void SendFile(string fileName)
+        {
+            // Create a TCP/IP  socket.
+            senderSock = new Socket(AddressFamily.InterNetwork,
+                SocketType.Stream, ProtocolType.Tcp);
+            senderSock.Connect(remoteEP);
+            byte[] msg = Encoding.ASCII.GetBytes("file");
+            int bytesSent = senderSock.Send(msg);
+            senderSock.SendFile(fileName);
+
+            senderSock.Shutdown(SocketShutdown.Both);
+            senderSock.Close();
         }
 
         public void AppendArrayToFile(string fileName, byte[] byteArray)
@@ -149,6 +208,66 @@ namespace client
 
             // error occured, return false
             return false;
+        }
+
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+            if (progress == 0)
+                mediaPlayer.Ctlcontrols.currentPosition = 0.0d;
+            else
+                mediaPlayer.Ctlcontrols.currentPosition = progress / 1000.0d;
+
+            timer1.Stop();
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            DialogResult res = openFileDialog1.ShowDialog();
+        }
+
+        private void openFileDialog1_FileOk(object sender, CancelEventArgs e)
+        {
+            SendFile(openFileDialog1.FileName);
+        }
+
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            // Release the socket.
+            //senderSock.Shutdown(SocketShutdown.Both);
+            //senderSock.Close();
+        }
+
+        private void timer2_Tick(object sender, EventArgs e)
+        {
+            // Create a TCP/IP  socket.
+            senderSock = new Socket(AddressFamily.InterNetwork,
+                SocketType.Stream, ProtocolType.Tcp);
+            senderSock.Connect(remoteEP);
+            byte[] msg = Encoding.ASCII.GetBytes("update");
+            senderSock.Send(msg);
+
+            byte[] bytes = new byte[1024];
+            int bytesRec = senderSock.Receive(bytes);
+            int recUp = int.Parse(Encoding.ASCII.GetString(bytes, 0, bytesRec));
+
+            if (recUp > update)
+            {
+                Console.WriteLine("Need update!");
+
+                DownloadFileSyncAndPlay();
+            }
+
+            else
+            {
+                // Release the socket.
+                senderSock.Shutdown(SocketShutdown.Both);
+                senderSock.Close();
+            }
+        }
+
+        private void songTime_Tick(object sender, EventArgs e)
+        {
+            label1.Text = ((int)(mediaPlayer.Ctlcontrols.currentPosition)).ToString();
         }
     }
 }
