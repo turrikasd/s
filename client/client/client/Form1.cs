@@ -22,6 +22,8 @@ namespace client
         static int progress = 0;
         static int update = -1;
 
+        static Stopwatch startTimeOffset = new Stopwatch();
+
         string curFileName = "music.mp3";
 
         public Form1()
@@ -43,8 +45,11 @@ namespace client
         try {
             // Establish the remote endpoint for the socket.
             //// This example uses port 11000 on the local computer.
-            IPHostEntry ipHostInfo = Dns.Resolve("169.254.160.127");
+            //IPHostEntry ipHostInfo = Dns.Resolve("169.254.160.127");
             //IPHostEntry ipHostInfo = Dns.Resolve("192.168.43.16");
+            IPHostEntry ipHostInfo = Dns.Resolve("151.80.117.207"); // OVH
+            //IPHostEntry ipHostInfo = Dns.Resolve("127.0.0.1");
+
             IPAddress ipAddress = ipHostInfo.AddressList[0];
             remoteEP = new IPEndPoint(ipAddress,11000);
 
@@ -67,7 +72,7 @@ namespace client
 
                 // Receive file!
                 Console.WriteLine("Starting to receive a file...");
-                senderSock.ReceiveTimeout = 150;
+                senderSock.ReceiveTimeout = 1000;
                 curFileName = "music" + update.ToString() + ".mp3";
 
                 for (int i = 0; i < 10; i++)
@@ -103,7 +108,8 @@ namespace client
 
                 Console.WriteLine("Done receiving file!");
 
-                senderSock.Send(Encoding.ASCII.GetBytes("done"));
+                msg = Encoding.ASCII.GetBytes("done");
+                bytesSent = senderSock.Send(msg);
 
                 // Receive the response from the remote device.
                 int bytesRec = senderSock.Receive(bytes);
@@ -117,6 +123,8 @@ namespace client
                 bytesRec = senderSock.Receive(bytes);
                 long sleepTime = long.Parse(Encoding.ASCII.GetString(bytes, 0, bytesRec));
                 progress = 0;
+
+                startTimeOffset.Start();
 
                 label2.Text = (sleepTime / 1000).ToString();
 
@@ -212,11 +220,17 @@ namespace client
 
         private void timer1_Tick(object sender, EventArgs e)
         {
+            progress += (int)(startTimeOffset.ElapsedMilliseconds - 4000);
+
             if (progress == 0)
                 mediaPlayer.Ctlcontrols.currentPosition = 0.0d;
             else
                 mediaPlayer.Ctlcontrols.currentPosition = progress / 1000.0d;
 
+
+            //Console.WriteLine((int)(startTimeOffset.ElapsedMilliseconds - 4000));
+            startTimeOffset.Stop();
+            startTimeOffset.Reset();
             timer1.Stop();
         }
 

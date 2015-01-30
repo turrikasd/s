@@ -69,7 +69,10 @@ namespace srv
 
                         handler.SendFile(curFileName);
 
-                        handler.Receive(msg);
+                        byte[] rec = new byte[1024];
+                        int bytesRe = handler.Receive(rec);
+
+                        Console.WriteLine("Rec: " + Encoding.ASCII.GetString(rec, 0, bytesRe));
 
                         Stopwatch sw = new Stopwatch();
                         sw.Start();
@@ -78,14 +81,16 @@ namespace srv
                         handler.Send(msg);
 
                         bytes = new byte[1024];
-                        int bytesRe = handler.Receive(bytes);
+                        bytesRe = handler.Receive(bytes);
 
-                        sw.Stop();
+                        Console.WriteLine("Rec: " + Encoding.ASCII.GetString(bytes, 0, bytesRe));
 
                         Console.WriteLine("Ping: " + sw.ElapsedMilliseconds);
 
                         string sendTimer = "" + (sw.ElapsedMilliseconds / 2 + 10000 - startTimer.ElapsedMilliseconds);
                         msg = Encoding.ASCII.GetBytes(sendTimer);
+
+                        sw.Stop();
 
                         handler.Send(msg); // send play order
 
@@ -98,7 +103,7 @@ namespace srv
                         startTimer.Start();
 
                         Console.WriteLine("Starting to receive a file...");
-                        handler.ReceiveTimeout = 50;
+                        handler.ReceiveTimeout = 1000;
 
                         using (var output = File.Create("song.mp3"))
                         {
